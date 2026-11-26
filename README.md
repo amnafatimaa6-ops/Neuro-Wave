@@ -2,7 +2,7 @@
 
 **Teaching a computer to listen for ripples in space.**
 
-> 🚧 **Status: work in progress.** This is a learning project. The AI detectors in it do **not** work well yet, and this README tells you honestly why. See [Known mistakes](#-known-mistakes-and-problems-in-the-notebook) at the end.
+> 🚧 **Status: work in progress.** This is a learning project. The AI detectors in it do **not** work well yet, and this README tells you honestly why. See [Lessons learned](#-lessons-learned-and-what-i-want-to-improve) near the end.
 
 ---
 
@@ -17,7 +17,7 @@
 7. [Tools and data credits](#-tools-and-data-credits)
 8. [Limitations](#-limitations-what-this-project-is-not)
 9. [Future work](#-future-work)
-10. [Known mistakes and problems in the notebook](#-known-mistakes-and-problems-in-the-notebook)
+10. [Lessons learned and what I want to improve](#-lessons-learned-and-what-i-want-to-improve)
 11. [Ongoing work](#-ongoing-work)
 
 ---
@@ -121,7 +121,7 @@ I added fake chirps of 5 different strengths, for all 8 mass pairs, to the 96 he
 ## 📊 Results (the honest version)
 
 ### Short summary
-**The classifier AIs did not learn to find the signal (they scored about as well as a coin flip), and the autoencoder test was too easy to prove anything.** The reasons are in the mistakes section.
+**The classifier AIs did not learn to find the signal (they scored about as well as a coin flip), and the autoencoder test was too easy to prove anything.** The reasons are in the lessons-learned section.
 
 ### Model 1: Simple CNN
 | Thing | Value |
@@ -158,7 +158,24 @@ Accuracy 0.667 looks okay, but it is a trick: two-thirds of the examples were "s
 |-----------|----------------|---------|
 | 5, 8, 12, 16, 20 | 768 each (8 masses x 96 windows) | **100% at every strength** |
 
-⚠️ **Do not read this as "the detector works perfectly."** The "strength" number is **not** a real signal-to-noise ratio, and the added signals were enormous. See [mistake #2](#-known-mistakes-and-problems-in-the-notebook).
+⚠️ **Do not read this as "the detector works perfectly."** The "strength" number is **not** a real signal-to-noise ratio, and the added signals were enormous. See [Lessons learned](#-lessons-learned-and-what-i-want-to-improve).
+
+---
+
+## 🖼️ Plots the notebook saves
+
+| File | What it shows |
+|------|---------------|
+| `raw_strain.png` | Raw strain for each event and detector |
+| `01_error_distribution.png` | Autoencoder error: calibration vs test windows |
+| `02_anomaly_timeline.png` | Error for each test window vs threshold |
+| `03_channel_comparison.png` | H1-channel error vs L1-channel error |
+| `04_training_history.png` | ⚠️ Probably the **wrong** curve, see [Lessons learned](#-lessons-learned-and-what-i-want-to-improve) |
+| `05_morphology_injection_response.png` | % flagged vs injection "strength" |
+| `06_injection_error_distributions.png` | Error with and without injected signals |
+| `07_mass_configuration_comparison.png` | Flagging for each of the 8 mass pairs |
+
+Data files, models and results are saved to Google Drive under `NEURO_WAVE/` (`data/raw`, `data/background`, `data/ml_dataset`, `data/anomaly_detection`, `results/final_anomaly_detection`). They are not stored in this repo because they are large.
 
 ---
 
@@ -199,23 +216,21 @@ Accuracy 0.667 looks okay, but it is a trick: two-thirds of the examples were "s
 
 ---
 
-## 🐛 Known mistakes and problems in the notebook
+## 🌟 Lessons learned and what I want to improve
 
-I re-read my own notebook and listed what I found. Writing them down is part of learning. Most important first.
+Every real research project has bugs and rough edges, and finding them is part of the job. Scientists call this *debugging*. I re-read my notebook and grouped what I learned into a few themes. Each one is a clear next step, not a failure.
 
-1. **The injected chirps in the final dataset are probably missing the merger.** `WAVEFORM_BANK` waveforms peak around `1e-21`, but `WAVEFORMS_FOR_INJECTION` (the last 4 seconds only) peak around `1e-26` to `1e-25`, roughly 9,000 to 60,000 times smaller. The loudest part of the chirp is very likely **not** in that slice, so the AI was being asked to find a faint tail that was then rescaled to look "loud". This alone can explain why AUC stayed near 0.5. The template filters inside the CNN were also cut from the last 1 second of the waveform, so they may have the same problem.
-2. **The autoencoder "SNR" test is not a real test.** The scale used is `target x (size of background) / (size of template)`, so at "strength 5" the added signal is **5 times bigger than the whole noise window**, and at 20 it is 20 times bigger. Of course 100% were flagged. It only shows that giant additions look weird, not that real signals are detectable.
-3. **The matched-filter baseline was never run.** The section is titled "matched-filter baseline" but only generates one reference waveform and stops. `matched_filter` is imported but not used.
-4. **Tiny-number problems.** Strain is around `1e-19` to `1e-21` and was stored as `float32`. The saved PSD values reach `0.0` at high frequencies, so the whitening used an artificial floor. Whitened windows range about +/-3 million rather than being near unit size, and I did not taper the windows before the FFT (edge effects). The first CNN was also trained on raw `~1e-19` numbers, which is hard for a network to learn from.
-5. **Plus/cross used as detector channels.** In the autoencoder benchmark the two wave polarisations were put into the two channels as if they were H1/L1. They are not. (I wrote this limitation in the methodology file already.)
-6. **Template filters are too coarse.** The first layer moves 8 samples at a time (about 7.8 ms), but chirp wiggles at 100+ Hz repeat faster than that, so it can miss the best alignment.
-7. **The autoencoder bottleneck is weak.** It squeezes 16,384 numbers into 8,192 (only 2x), so it may be able to rebuild almost anything. Also, the threshold came from only 3 calibration intervals that included at least one high-error window (max 0.241), while the test windows were calmer (max 0.092), so "0 of 96 flagged" is not a reliable false-alarm rate.
-8. **Hard-coded baseline number.** I typed `0.51524` as the "previous AUC", but the notebook actually printed `0.51897`. The "improvement of +0.037" is therefore not computed correctly, and with only 1,000 validation samples it is small anyway.
-9. **Wrong history plot.** `04_training_history.png` is built from the variable `history`, which still held the earlier CNN-BiGRU training, but the title says "Autoencoder". The autoencoder's history is `history_ae`. Please regenerate.
-10. **First autoencoder scoring used un-normalised data.** The first run gave errors around `1e7` because the model expects standardised input. I corrected it later ("CORRECTED FINAL RESULTS"), but earlier outputs with the same file names may have been overwritten or mixed up. Use only the corrected results.
-11. **Naming and scope confusion.** Files are called `GW150914_...` but the background data comes from both GW150914 and GW170817 times. The project is written as `NEURO_WAVE` in folder names and `NEURO//WAVE` in printed messages, so I should pick one name.
-12. **Repeated examples.** The 4,000 and 1,000 examples are drawn with replacement from only a few hundred windows, so the same noise appears many times. The split is by time interval (good), but the effective data size is much smaller than it looks.
-13. **Cell-order problems.** The first download cell fails (`download_event_data` not defined) until the fixed acquisition cell runs. `pycbc` is imported before it is installed, and `TimeSeries` is imported from both `gwpy` and `pycbc` (the later import wins, which can break `fetch_open_data`). Two Drive mount points (`/content/drive` and `/content/gdrive`) are also used. On a fresh runtime, reorder the cells, install everything at the top, and use one path.
+| Theme | What I learned | Next step |
+|-------|----------------|-----------|
+| 🧪 **Practice signals** | I need to double-check that the fake chirps hidden in the noise really contain the loudest part (the merger). One of my checks suggests the final dataset may have trimmed it off. This is probably the main reason the classifier stayed near coin-flip level. | Plot a few injected examples *before* training, and keep the full chirp. |
+| 📏 **Measuring signal strength** | I used a simple size measure instead of real signal-to-noise ratio (SNR). In the autoencoder test, that made the added signals very large, so "100% flagged" was too easy to be meaningful. | Use proper matched-filter SNR and test at realistic strengths. |
+| 🏁 **Comparing with a standard method** | Good AI results should be compared with the classic **matched filter**. I set up the reference waveform but have not run the comparison yet. | Run the baseline and compare ROC curves. |
+| 🔢 **Very tiny numbers** | Strain values are around `1e-21`, which computers can struggle with. Storing them in a small number format and not smoothing the window edges before whitening may have caused small errors. | Rescale or use higher precision, taper windows, and re-check the whitening. |
+| 🎛️ **Simplified physics** | In places I used simple stand-ins (for example, putting the two wave polarisations into the two channels instead of real H1 and L1 detector responses, and a fairly coarse template filter step). These are fine for a first prototype. | Add real detector response and finer filtering. |
+| 📦 **Small data and thresholds** | I had a small amount of noise data (15 intervals), re-used many times. The autoencoder compresses the input only a little, and its alarm threshold came from just 3 intervals, so "0 false alarms" is not yet a reliable number. | Gather more noise, tighten the autoencoder, and set the threshold from more data. |
+| 🧹 **Notebook housekeeping** | A few things need tidying: one plot (`04_training_history.png`) was drawn from the wrong training history, one comparison number was typed by hand, my first autoencoder scoring used un-normalised input (fixed later in the "corrected" cells), some cells need to run in a particular order, and file names mix `GW150914` and `GW170817` data. | Reorder cells, regenerate plots, compute every number in code, and rename files. |
+
+**The honest takeaway:** the detectors in this notebook are early prototypes and do not detect signals reliably yet. Reporting that clearly, and knowing exactly what to fix, is good science. 🚀
 
 ---
 
